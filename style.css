@@ -443,4 +443,7 @@ input { font-family: inherit; }
 }
 @keyframes boot-spin { to { transform: rotate(360deg); } }
 #bootText { font-size: 15px; color: var(--ink-soft); line-height: 1.6; }
-.boot-retry { margin-top: 18px; }
+.boot-actions { margin-top: 18px; display: flex; flex-direction: column; align-items: center; gap: 10px; }
+.boot-actions .btn-primary { min-width: 140px; }
+.boot-skip { font-size: 13px; padding: 8px 16px; color: var(--ink-soft); }
+.boot-skip:hover { color: var(--ink); }

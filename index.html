@@ -164,12 +164,15 @@
 <script src="data/pdf.min.js"></script>
 <script src="lexer.js"></script>
 
-<!-- ===== 启动加载遮罩（大文件异步加载，失败可重试） ===== -->
+<!-- ===== 启动加载遮罩（大文件异步加载，失败可重试/跳过） ===== -->
 <div id="bootMask" class="boot-mask">
   <div class="boot-card">
     <div class="boot-spinner"></div>
     <div id="bootText">正在加载雅思词库（约 2MB）…</div>
-    <button id="bootRetry" class="btn-primary boot-retry" style="display:none" onclick="window.__bootRetry && window.__bootRetry()">重试</button>
+    <div class="boot-actions">
+      <button id="bootRetry" class="btn-primary boot-retry" style="display:none" onclick="window.__bootRetry && window.__bootRetry()">重试</button>
+      <button id="bootSkip" class="btn-ghost boot-skip" onclick="window.__bootSkip && window.__bootSkip()">跳过，直接进入（词库后台继续加载）</button>
+    </div>
   </div>
 </div>
 
@@ -186,14 +189,41 @@
   var mask = document.getElementById('bootMask');
   var txt = document.getElementById('bootText');
   var retry = document.getElementById('bootRetry');
+  var skipBtn = document.getElementById('bootSkip');
   var loaded = {};
   var failed = [];
   var booting = false;
+  var skipped = false;
+  var bootTimer = null;
 
   function setText(t) { if (txt) txt.textContent = t; }
   function setLoading(on) {
     if (retry) retry.style.display = (on || !failed.length) ? 'none' : 'inline-block';
     if (mask) mask.style.display = on ? 'flex' : 'none';
+  }
+  function hideMask() {
+    if (mask) mask.style.display = 'none';
+    if (bootTimer) { clearTimeout(bootTimer); bootTimer = null; }
+  }
+  // 逃生：跳过加载，直接进入应用（词库仍在后台加载，加载完自动就绪）
+  function bootSkip() {
+    if (skipped) return;
+    skipped = true;
+    hideMask();
+    if (retry) retry.style.display = 'none';
+    // 后台继续加载缺失项
+    if (!window.__APP_READY) {
+      var todo = deps.filter(function (s) { return !loaded[s] && (s !== 'app.js' || !window.__APP_READY); });
+      todo.forEach(function (src) {
+        loadScript(src).then(function () {
+          if (src === 'data/words.js' && window.__ensureWords) { try { window.__ensureWords(); } catch (e) {} }
+        }, function () { /* 后台加载失败不打扰，用户可稍后刷新 */ });
+      });
+    }
+    toast_ish('词库加载中，稍后可查看词汇书');
+  }
+  function toast_ish(msg) {
+    try { if (window.__toast) window.__toast(msg); } catch (e) { /* 忽略 */ }
   }
   function loadScript(src) {
     return new Promise(function (res, rej) {
@@ -214,10 +244,16 @@
       if (s === 'app.js') return !window.__APP_READY;
       return true;
     });
+    // 超时自动跳过：20 秒仍未就绪则直接进入应用（词库后台继续）
+    if (bootTimer) clearTimeout(bootTimer);
+    bootTimer = setTimeout(function () {
+      if (!window.__APP_READY && !skipped) bootSkip();
+    }, 20000);
     var idx = 0;
     (function next() {
       if (idx >= todo.length) {
         booting = false;
+        if (bootTimer) { clearTimeout(bootTimer); bootTimer = null; }
         // words.js 已加载但 app.js 未跑 → 补建索引；若都已就绪则直接收尾
         if (window.IELTS_WORDS && window.__ensureWords) window.__ensureWords();
         // 全部就绪 → 等 app 初始化
@@ -239,12 +275,14 @@
       }, function () {
         failed = [src];
         booting = false;
-        setText('加载失败：' + src.split('/').pop() + '（网络不稳定，可能是 GitHub Pages 访问问题）。请检查网络后点击重试。');
+        if (bootTimer) { clearTimeout(bootTimer); bootTimer = null; }
+        setText('加载失败：' + src.split('/').pop() + '（网络不稳定，可能是 GitHub Pages 访问问题）。可点击重试，或跳过直接进入。');
         setLoading(false);
       });
     })();
   }
   window.__bootRetry = boot;
+  window.__bootSkip = bootSkip;
   boot();
 })();
 </script>
