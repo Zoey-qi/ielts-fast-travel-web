@@ -624,6 +624,30 @@ function handlePdfImport(file) {
 
   showImportProgress('正在解析 PDF…', 8);
 
+  // PDF 库懒加载：未加载先补加载（启动时不再预加载，省首屏）
+  if (!window.pdfjsLib) {
+    showImportProgress('正在加载 PDF 引擎…', 4);
+    loadOptionalScript('data/pdf.min.js').then(() => {
+      if (!window.pdfjsLib) { hideImportProgress(); toast('PDF 引擎加载失败，请检查网络后重试'); return; }
+      parsePdfFile(file);
+    }, () => { hideImportProgress(); toast('PDF 引擎加载失败，请检查网络后重试'); });
+    return;
+  }
+  parsePdfFile(file);
+}
+
+// 可选依赖（PDF/EPUB 引擎）运行时懒加载：启动不预载，用到才取
+function loadOptionalScript(src) {
+  return new Promise(function (res, rej) {
+    var s = document.createElement('script');
+    s.src = src; s.async = false;
+    s.onload = res;
+    s.onerror = function () { rej(new Error(src)); };
+    document.head.appendChild(s);
+  });
+}
+
+function parsePdfFile(file) {
   const reader = new FileReader();
   reader.onload = async () => {
     try {
@@ -725,6 +749,19 @@ function htmlToText(html) {
 }
 
 function handleEpubImport(file) {
+  // JSZip 懒加载：启动不预载，导入 EPUB 时才取
+  if (!window.JSZip) {
+    showImportProgress('正在加载 EPUB 引擎…', 4);
+    loadOptionalScript('data/jszip.min.js').then(() => {
+      if (!window.JSZip) { hideImportProgress(); toast('EPUB 引擎加载失败，请检查网络后重试'); return; }
+      parseEpubFile(file);
+    }, () => { hideImportProgress(); toast('EPUB 引擎加载失败，请检查网络后重试'); });
+    return;
+  }
+  parseEpubFile(file);
+}
+
+function parseEpubFile(file) {
   showImportProgress('正在解压 EPUB…', 10);
   const reader = new FileReader();
   reader.onload = async () => {

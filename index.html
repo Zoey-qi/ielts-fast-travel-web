@@ -160,11 +160,9 @@
   </div>
 </div>
 
-<script src="data/jszip.min.js"></script>
-<script src="data/pdf.min.js"></script>
-<script src="lexer.js"></script>
-
-<!-- ===== 启动加载遮罩（大文件异步加载，失败可重试/跳过） ===== -->
+<!-- 启动加载遮罩：所有依赖脚本（含 lexer/pdf/jszip）统一由引导器异步加载，
+     不再用同步 <script> 阻塞首屏 —— 慢网络下页面解析不卡，遮罩必然能弹出 -->
+<div id="bootMask" class="boot-mask">
 <div id="bootMask" class="boot-mask">
   <div class="boot-card">
     <div class="boot-spinner"></div>
@@ -177,53 +175,43 @@
 </div>
 
 <script>
-/* 引导加载器：words.js(6.3MB) / jiushizhu.js(1MB) 异步加载，
-   不阻塞首屏；任何一步失败显示重试，而非让整个 app 崩溃 */
+/* 引导加载器 v3：
+   依赖分两类 ——
+   必需(阻塞启动)：lexer.js(14KB) → words.js(6.3MB) → jiushizhu.js(1MB) → app.js
+   按需(用到才加载)：pdf.min.js(316KB)、jszip.min.js(96KB)、pdf.worker.min.js ——
+     在用户真正导入 PDF/EPUB 时由 app.js 懒加载，启动不等待。
+   任何必需项失败：遮罩保留 + 显示"重试/跳过"按钮，绝不白框锁死。 */
 (function () {
-  var deps = ['data/words.js', 'data/jiushizhu.js', 'app.js'];
+  var MUST = ['lexer.js', 'data/words.js', 'data/jiushizhu.js', 'app.js'];
   var texts = {
+    'lexer.js': '正在加载阅读引擎…',
     'data/words.js': '正在加载雅思词库（约 2MB）…',
     'data/jiushizhu.js': '正在加载内置小说《遥远的救世主》…',
     'app.js': '正在启动…'
   };
   var mask = document.getElementById('bootMask');
   var txt = document.getElementById('bootText');
-  var retry = document.getElementById('bootRetry');
+  var retryBtn = document.getElementById('bootRetry');
   var skipBtn = document.getElementById('bootSkip');
   var loaded = {};
-  var failed = [];
-  var booting = false;
   var skipped = false;
+  var booting = false;
   var bootTimer = null;
 
   function setText(t) { if (txt) txt.textContent = t; }
   function setLoading(on) {
-    if (retry) retry.style.display = (on || !failed.length) ? 'none' : 'inline-block';
     if (mask) mask.style.display = on ? 'flex' : 'none';
+  }
+  function showActions(show) {
+    if (retryBtn) retryBtn.style.display = show ? 'inline-block' : 'none';
+    if (skipBtn) skipBtn.style.display = show ? 'inline-block' : 'none';
   }
   function hideMask() {
     if (mask) mask.style.display = 'none';
     if (bootTimer) { clearTimeout(bootTimer); bootTimer = null; }
   }
-  // 逃生：跳过加载，直接进入应用（词库仍在后台加载，加载完自动就绪）
-  function bootSkip() {
-    if (skipped) return;
-    skipped = true;
-    hideMask();
-    if (retry) retry.style.display = 'none';
-    // 后台继续加载缺失项
-    if (!window.__APP_READY) {
-      var todo = deps.filter(function (s) { return !loaded[s] && (s !== 'app.js' || !window.__APP_READY); });
-      todo.forEach(function (src) {
-        loadScript(src).then(function () {
-          if (src === 'data/words.js' && window.__ensureWords) { try { window.__ensureWords(); } catch (e) {} }
-        }, function () { /* 后台加载失败不打扰，用户可稍后刷新 */ });
-      });
-    }
-    toast_ish('词库加载中，稍后可查看词汇书');
-  }
   function toast_ish(msg) {
-    try { if (window.__toast) window.__toast(msg); } catch (e) { /* 忽略 */ }
+    try { if (window.__toast) window.__toast(msg); } catch (e) {}
   }
   function loadScript(src) {
     return new Promise(function (res, rej) {
@@ -234,17 +222,41 @@
       document.head.appendChild(s);
     });
   }
-  function boot() {
-    if (booting) return;
-    booting = true;
-    setLoading(true);
-    // 只加载缺失项；app.js 已执行过则跳过（避免重复绑事件）
-    var todo = deps.filter(function (s) {
+  // 逃生：跳过加载直接进入应用（后台继续加载，完成自动就绪）
+  function bootSkip() {
+    if (skipped) return;
+    skipped = true;
+    hideMask();
+    showActions(false);
+    var todo = MUST.filter(function (s) {
       if (loaded[s]) return false;
       if (s === 'app.js') return !window.__APP_READY;
       return true;
     });
-    // 超时自动跳过：20 秒仍未就绪则直接进入应用（词库后台继续）
+    todo.forEach(function (src) {
+      loadScript(src).then(function () {
+        if (src === 'data/words.js' && window.__ensureWords) { try { window.__ensureWords(); } catch (e) {} }
+      }, function () {});
+    });
+    toast_ish('词库加载中，稍后可查看词汇书');
+  }
+  function fail(src) {
+    booting = false;
+    if (bootTimer) { clearTimeout(bootTimer); bootTimer = null; }
+    // 失败时保留遮罩，显示"重试/跳过"按钮 —— 不藏遮罩、不锁死
+    setText('加载失败：' + src.split('/').pop() + '。网络不稳定（GitHub Pages 访问慢）。可重试，或跳过直接进入（词库后台继续加载）。');
+    showActions(true);
+  }
+  function boot() {
+    if (booting) return;
+    booting = true;
+    setLoading(true);
+    showActions(false);
+    var todo = MUST.filter(function (s) {
+      if (loaded[s]) return false;
+      if (s === 'app.js') return !window.__APP_READY;
+      return true;
+    });
     if (bootTimer) clearTimeout(bootTimer);
     bootTimer = setTimeout(function () {
       if (!window.__APP_READY && !skipped) bootSkip();
@@ -254,9 +266,7 @@
       if (idx >= todo.length) {
         booting = false;
         if (bootTimer) { clearTimeout(bootTimer); bootTimer = null; }
-        // words.js 已加载但 app.js 未跑 → 补建索引；若都已就绪则直接收尾
         if (window.IELTS_WORDS && window.__ensureWords) window.__ensureWords();
-        // 全部就绪 → 等 app 初始化
         var t = setInterval(function () {
           if (window.__APP_READY) { clearInterval(t); setLoading(false); }
         }, 60);
@@ -265,20 +275,11 @@
       var src = todo[idx++];
       setText(texts[src] || '加载中…');
       loadScript(src).then(function () {
-        // words.js 刚加载完 → 立即重建词库索引（app.js 若未运行，由 __APP_READY 收尾）
         if (src === 'data/words.js') {
-          try {
-            if (window.__ensureWords) window.__ensureWords();
-          } catch (e) { /* 忽略 */ }
+          try { if (window.__ensureWords) window.__ensureWords(); } catch (e) {}
         }
         next();
-      }, function () {
-        failed = [src];
-        booting = false;
-        if (bootTimer) { clearTimeout(bootTimer); bootTimer = null; }
-        setText('加载失败：' + src.split('/').pop() + '（网络不稳定，可能是 GitHub Pages 访问问题）。可点击重试，或跳过直接进入。');
-        setLoading(false);
-      });
+      }, function () { fail(src); });
     })();
   }
   window.__bootRetry = boot;
