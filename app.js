@@ -340,13 +340,19 @@ const save = (k, v) => localStorage.setItem(k, JSON.stringify(v));
 function getFavs() { return load(LS.FAVORITES) || []; }
 function setFavs(f) { save(LS.FAVORITES, f); }
 function getProgress() { return load(LS.PROGRESS) || {}; }
-function getSettings() { return load(LS.SETTINGS) || { mode: 'full' }; }
+function getSettings() {
+  const s = load(LS.SETTINGS) || { mode: 'bilingual' };
+  // 旧版模式值迁移：full → bilingual, blanks → english
+  if (s.mode === 'full') { s.mode = 'bilingual'; save(LS.SETTINGS, s); }
+  else if (s.mode === 'blanks') { s.mode = 'english'; save(LS.SETTINGS, s); }
+  return s;
+}
 
 /* ---------- 全局状态 ---------- */
 const state = {
   view: 'bookshelf',
   chapterId: 'c1',
-  mode: getSettings().mode || 'full',
+  mode: getSettings().mode || 'bilingual',
   quiz: null,
   wbPage: 0,
   wbPageSize: 60,
@@ -388,6 +394,75 @@ function getWord(w) { return WORD_INDEX[String(w).toLowerCase()]; }
    - 若用户缓存旧 CSS 无此规则，内联 style.display 也能压过 .modal-mask 的 display:flex。 */
 function showModal(el) { el.hidden = false; el.style.display = 'flex'; }
 function hideModal(el) { el.hidden = true; el.style.display = 'none'; }
+
+/* ================= 翻译层（全英文模式用） =================
+   主接口：有道开放翻译（aidemo.youdao.com/trans，免费无需 key）
+   兜底：MyMemory（api.mymemory.translated.net）
+   按"书id + 章节索引"缓存到 IndexedDB，切换模式不重复翻译。
+   langPair: 'zh-en'（中文书翻英文）| 'en-zh'（英文书翻中文，纯英文模式为译文可选） */
+const TRANS_CACHE_PREFIX = 'trans_';
+async function translateText(text, from, to, key) {
+  const fullKey = TRANS_CACHE_PREFIX + key;
+  // 已有缓存直接返回
+  try {
+    const cached = await idbGet(fullKey);
+    if (cached && cached.text) return cached.text;
+  } catch (e) { /* 缓存不可用则直接翻译 */ }
+  const MAXLEN = 1500; // 有道接口单次上限，超长按句切分
+  const chunks = splitForTrans(text, MAXLEN);
+  const out = [];
+  for (const c of chunks) {
+    const t = await transChunk(c, from, to);
+    out.push(t);
+    await new Promise(r => setTimeout(r, 80)); // 限速，防接口封禁
+  }
+  const joined = out.join('\n');
+  try { await idbPut(fullKey, { id: fullKey, text: joined }); } catch (e) { /* 缓存失败不影响阅读 */ }
+  return joined;
+}
+// 按标点切分，每段不超过 maxLen 字符（保留段落边界）
+function splitForTrans(text, maxLen) {
+  if (text.length <= maxLen) return [text];
+  const parts = [];
+  const sents = text.split(/(?<=[。！？!?；;\n])/);
+  let cur = '';
+  for (const s of sents) {
+    if ((cur + s).length > maxLen && cur) { parts.push(cur); cur = s; }
+    else cur += s;
+    if (cur.length > maxLen) { // 单句超长硬切
+      while (cur.length > maxLen) { parts.push(cur.slice(0, maxLen)); cur = cur.slice(maxLen); }
+    }
+  }
+  if (cur) parts.push(cur);
+  return parts;
+}
+async function transChunk(text, from, to) {
+  if (!text.trim()) return '';
+  // 主：有道
+  try {
+    const url = 'https://aidemo.youdao.com/trans?q=' + encodeURIComponent(text) + '&from=' + from + '&to=' + to;
+    const r = await fetch(url, { method: 'GET' });
+    const j = await r.json();
+    if (j && j.errorCode === '0' && j.translation && j.translation[0]) return j.translation[0];
+  } catch (e) { /* 有道失败走兜底 */ }
+  // 兜底：MyMemory
+  try {
+    const url = 'https://api.mymemory.translated.net/get?q=' + encodeURIComponent(text) + '&langpair=' + from + '%7C' + to;
+    const r = await fetch(url);
+    const j = await r.json();
+    if (j && j.responseData && j.responseData.translatedText) return j.responseData.translatedText;
+  } catch (e) { /* 两个都失败 */ }
+  throw new Error('翻译接口均不可用');
+}
+// 中文书全英文：整章翻译（懒翻译 + 缓存）
+async function getZhChapterTranslation(ch, bookId) {
+  const key = 'zh_' + bookId + '_' + (ch.id || 'ch' + (state.pdfBook ? state.pdfBook.chapters.indexOf(ch) : 0));
+  const text = ch.text || '';
+  if (!text.trim()) return '';
+  return translateText(text, 'zh-CHS', 'en', key);
+}
+// 英文书全英文模式：不翻译，直接原样（模式3=纯英文原文）
+function getEnPlain(ch) { return ch.text || ''; }
 
 /* ================= 单词弹层 ================= */
 let modalWord = null;
@@ -971,7 +1046,6 @@ function openPdfChapter(idx) {
   const ch = chapters[idx];
   if (!ch) return;
   state.pdfChapter = idx;
-  const mode = state.mode;
   const unit = (book.lang === 'zh' || book.type === 'builtin-zh') ? '章' : '部分';
 
   // 阅读头
@@ -983,9 +1057,10 @@ function openPdfChapter(idx) {
       <span class="reader-ch">第 ${idx+1} / ${chapters.length} ${unit}</span>
     </div>`;
 
-  // 正文（自动挖空渲染；中文书用 zh 渲染：英文单词 + 中文小字）
+  // 正文（三模式渲染：bilingual 中英注释 / english 纯英文 / plain 全英文）
   const chLang = ch.lang || 'en';
-  $('#pdfBody').innerHTML = `<div class="para">${renderPdfParagraph(ch.text, ch.hits, chLang)}</div>`;
+  const isZh = chLang === 'zh' || book.type === 'builtin-zh';
+  $('#pdfBody').innerHTML = `<div class="para">${renderPdfParagraph(ch, isZh)}</div>`;
 
   // 翻页
   $('#pdfFooter').innerHTML = `
@@ -1009,10 +1084,36 @@ function openPdfChapter(idx) {
   showView('pdfreader');
 }
 
-function renderPdfParagraph(text, hits, lang, mode) {
+function renderPdfParagraph(ch, isZh, mode) {
   mode = mode || state.mode;
-  lang = lang || 'en';
-  if (lang === 'zh') return Lexer.renderZhHits(text, hits, mode);
+  if (!ch) return '';
+  const text = ch.text || '';
+  const hits = ch.hits || [];
+  // 全英文模式：中文书 → 整章翻译；英文书 → 原样（无高亮）
+  if (mode === 'plain') {
+    if (isZh) {
+      // 异步翻译：先占位，翻译完成替换（懒加载 + 缓存 + 去重）
+      const holderId = 'trans-' + (ch.id || 'c');
+      const bookId = (state.pdfBook && state.pdfBook.book && state.pdfBook.book.id) || 'zh';
+      if (!window.__transPending) window.__transPending = {};
+      if (!window.__transPending[holderId]) {
+        window.__transPending[holderId] = true;
+        getZhChapterTranslation(ch, bookId).then(en => {
+          window.__transPending[holderId] = false;
+          const holder = document.getElementById(holderId);
+          if (holder) holder.innerHTML = esc(en).replace(/\n/g, '<br>');
+        }).catch(() => {
+          window.__transPending[holderId] = false;
+          const holder = document.getElementById(holderId);
+          if (holder) holder.innerHTML = '<span class="trans-fail">翻译失败：请检查网络，稍后切换模式重试。</span>';
+        });
+      }
+      return `<span id="${holderId}" class="trans-loading">⏳ 正在翻译本${(state.pdfBook && state.pdfBook.book.type === 'builtin-zh') ? '章' : '部分'}…（仅首次，之后秒开）</span>`;
+    }
+    return esc(text).replace(/\n/g, '<br>');
+  }
+  // 中英注释 / 纯英文：lexer 已兼容 bilingual/english 新名
+  if (isZh) return Lexer.renderZhHits(text, hits, mode);
   return Lexer.renderHits(text, hits, mode);
 }
 
@@ -1028,8 +1129,8 @@ function setupReaderModeToggle(which) {
       const scrollY = window.scrollY;
       if (which === 'pdf' && state.pdfBook) {
         const ch = state.pdfBook.chapters[state.pdfChapter];
-        const chLang = ch.lang || 'en';
-        $('#pdfBody').innerHTML = `<div class="para">${renderPdfParagraph(ch.text, ch.hits, chLang)}</div>`;
+        const isZh = ch.lang === 'zh' || state.pdfBook.book.type === 'builtin-zh';
+        $('#pdfBody').innerHTML = `<div class="para">${renderPdfParagraph(ch, isZh)}</div>`;
       } else {
         const ch = NOVEL.find(c => c.id === state.chapterId);
         $('#readerBody').innerHTML = ch.paragraphs.map(p => `<div class="para">${renderParagraph(p, state.mode)}</div>`).join('');
@@ -1128,6 +1229,10 @@ function openChapter(id) {
 }
 
 function renderParagraph(text, mode) {
+  // 全英文模式：原样输出英文（保留 [word] 标记去掉，作为纯阅读）
+  if (mode === 'plain') {
+    return esc(text.replace(/\[([a-z]+)\]/g, '$1')).replace(/\n/g, '<br>');
+  }
   // 解析 [word] 标记
   let html = '';
   let last = 0;
@@ -1137,10 +1242,14 @@ function renderParagraph(text, mode) {
     html += esc(text.slice(last, m.index));
     const word = m[1];
     const entry = getWord(word);
-    if (mode === 'blanks') {
-      html += `<span class="blank-tag" data-word="${esc(word)}">${'_'.repeat(Math.max(3, word.length))}</span>`;
-    } else {
+    if (mode === 'english' || mode === 'blanks') {
+      // 纯英文：高亮可点，无中文注释
       html += `<span class="word-tag" data-word="${esc(word)}">${esc(word)}</span>`;
+    } else {
+      // 中英注释：英文 + 中文小字
+      const zh = (entry && entry.senses && entry.senses[0]) ? entry.senses[0].zh : '';
+      html += `<span class="word-tag" data-word="${esc(word)}">${esc(word)}</span>` +
+              (zh ? `<span class="zh-tip">${esc(zh)}</span>` : '');
     }
     last = m.index + m[0].length;
   }
@@ -1447,7 +1556,8 @@ function renderMine() {
   }
   $('#mChapter').textContent = cur;
   const s = getSettings();
-  $('#modeDefault').textContent = '当前：' + (s.mode === 'blanks' ? '挖空' : '全英文');
+  const modeLabel = { bilingual: '中英注释', english: '纯英文', plain: '全英文' }[s.mode] || '中英注释';
+  $('#modeDefault').textContent = '当前：' + modeLabel;
 
   // 挖空难度
   const lv = s.blankLevel || 'A2';
@@ -1522,7 +1632,7 @@ function init() {
   $('#btnReset').addEventListener('click', () => {
     if (confirm('确定清空所有收藏、进度和测试记录？')) {
       [LS.FAVORITES, LS.PROGRESS, LS.QUIZ_HISTORY, LS.SETTINGS].forEach(k => localStorage.removeItem(k));
-      state.mode = 'full';
+      state.mode = 'bilingual';
       state.wbPage = 0; state.wbResults = []; state.wbSearchTerm = ''; state.wbCefr = 'all';
       $('#wbSearch').value = '';
       renderBookshelf(); renderMine();
@@ -1531,11 +1641,14 @@ function init() {
   });
   $('#modeDefault').addEventListener('click', () => {
     const s = getSettings();
-    s.mode = s.mode === 'blanks' ? 'full' : 'blanks';
+    // 旧值迁移 + 三模式轮换：bilingual → english → plain → bilingual
+    const cur = { full: 'bilingual', blanks: 'english' }[s.mode] || s.mode || 'bilingual';
+    const next = cur === 'bilingual' ? 'english' : cur === 'english' ? 'plain' : 'bilingual';
+    s.mode = next;
     save(LS.SETTINGS, s);
-    state.mode = s.mode;
+    state.mode = next;
     renderMine();
-    toast('默认模式已切换为 ' + (s.mode === 'blanks' ? '挖空' : '全英文'));
+    toast('默认模式已切换为 ' + ({ bilingual: '中英注释', english: '纯英文', plain: '全英文' }[next]));
   });
 
   // 搜索框清空时恢复

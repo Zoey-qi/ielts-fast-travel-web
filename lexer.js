@@ -175,7 +175,7 @@
   }
 
   /**
-   * 渲染挖空 HTML。mode: 'full' 高亮可点 | 'blanks' 下划线
+   * 渲染挖空 HTML。mode: 'full'/'bilingual' 高亮可点 | 'blanks'/'english' 下划线
    * @param {string} text 原文
    * @param {Array} hits scan 结果
    * @param {string} mode
@@ -183,6 +183,7 @@
   function renderHits(text, hits, mode) {
     var html = '';
     var last = 0;
+    var blank = (mode === 'blanks' || mode === 'english');
     hits.forEach(function (h) {
       // 通过 text 查找精确位置（h.idx 可能因撇号有偏差，用 indexOf 修正）
       var start = text.indexOf(h.text, last);
@@ -190,7 +191,7 @@
       if (start < last) start = last;
       var end = start + h.text.length;
       html += escapeHtml(text.slice(last, start));
-      if (mode === 'blanks') {
+      if (blank) {
         html += '<span class="blank-tag" data-word="' + escapeAttr(h.lemma) + '">' + '_'.repeat(Math.max(3, h.lemma.length)) + '</span>';
       } else {
         html += '<span class="word-tag" data-word="' + escapeAttr(h.lemma) + '">' + escapeHtml(h.text) + '</span>';
@@ -287,8 +288,8 @@
 
   /**
    * 渲染中文替换 HTML。
-   * mode: 'full' → 命中处显示英文单词 + 中文小字提示（边读边记）；
-   *        'blanks' → 命中处直接显示英文单词（无中文提示），靠上下文回忆意思（中文语境已提示）。
+   * mode: 'bilingual'|'full' → 命中处显示英文单词 + 中文小字提示（边读边记）；
+   *        'english'|'blanks' → 命中处直接显示英文单词（无中文提示），靠上下文回忆意思（中文语境已提示）。
    * 两种模式下英文单词都可点击弹出词汇书级讲解（中文释义 + 英/美音标）。
    * @param {string} text 中文原文
    * @param {Array} hits scanZh 结果
@@ -304,9 +305,9 @@
       var end = start + h.text.length;
       html += escapeHtml(text.slice(last, start));
       var lemma = h.lemma;
-      if (mode === 'blanks') {
-        // 挖空模式：直接显示英文单词（下划线样式暗示"可点看讲解"），不显示中文提示
-        html += '<span class="blank-tag" data-word="' + escapeAttr(lemma) + '">' + escapeHtml(lemma) + '</span>';
+      if (mode === 'english' || mode === 'blanks') {
+        // 纯英文模式：直接显示英文单词（可点看讲解），不显示中文提示
+        html += '<span class="word-tag" data-word="' + escapeAttr(lemma) + '">' + escapeHtml(lemma) + '</span>';
       } else {
         html += '<span class="word-tag" data-word="' + escapeAttr(lemma) + '">' + escapeHtml(lemma) + '</span>' +
                 '<span class="zh-tip">' + escapeHtml(h.zh) + '</span>';

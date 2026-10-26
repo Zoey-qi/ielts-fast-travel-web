@@ -214,6 +214,13 @@ input { font-family: inherit; }
   margin: 0 1px; vertical-align: 2px;
   user-select: none;
 }
+/* 全英文模式：中文书整章翻译的加载/失败态 */
+.trans-loading {
+  display: inline-block; padding: 18px 24px; margin: 8px 0;
+  background: var(--primary-soft); border-radius: 12px;
+  color: var(--ink-soft); font-size: 15px;
+}
+.trans-fail { color: var(--danger, #c0392b); font-size: 14px; }
 
 .reader-footer { margin-top: 24px; text-align: center; }
 .reader-nav { margin-top: 14px; }
