@@ -408,7 +408,7 @@ async function translateText(text, from, to, key) {
     const cached = await idbGet(fullKey);
     if (cached && cached.text) return cached.text;
   } catch (e) { /* 缓存不可用则直接翻译 */ }
-  const MAXLEN = 1500; // 有道接口单次上限，超长按句切分
+  const MAXLEN = 500; // 有道 GET URL 上限约 8KB（中文 900 字即失败）；500 中文≈URL 4.6KB 安全，且兼容 MyMemory 免费 500 字符限制
   const chunks = splitForTrans(text, MAXLEN);
   const out = [];
   for (const c of chunks) {
@@ -445,9 +445,10 @@ async function transChunk(text, from, to) {
     const j = await r.json();
     if (j && j.errorCode === '0' && j.translation && j.translation[0]) return j.translation[0];
   } catch (e) { /* 有道失败走兜底 */ }
-  // 兜底：MyMemory
+  // 兜底：MyMemory（语言码需映射，zh-CHS 不识别）
   try {
-    const url = 'https://api.mymemory.translated.net/get?q=' + encodeURIComponent(text) + '&langpair=' + from + '%7C' + to;
+    const mmFrom = (from === 'zh-CHS') ? 'zh-CN' : from;
+    const url = 'https://api.mymemory.translated.net/get?q=' + encodeURIComponent(text) + '&langpair=' + mmFrom + '%7C' + to;
     const r = await fetch(url);
     const j = await r.json();
     if (j && j.responseData && j.responseData.translatedText) return j.responseData.translatedText;
