@@ -436,13 +436,20 @@ function closeWordModal() {
   modalWord = null;
 }
 
-/* 朗读单词：优先美音（en-US，雅思常听美音），带重读高亮 */
-let speakUtterance = null;
-function speakWord(entry) {
-  if (!entry || !('speechSynthesis' in window)) return;
+/* 朗读单词：优先有道词典真人发音（美音），网络音频失败/缺失时回退系统 TTS。
+   原因：浏览器 speechSynthesis 依赖本机语音包，国内 Windows 常见无声
+   （未装英语语音 / Chrome TTS 卡死 / 微信内置浏览器不支持），
+   有道 dictvoice 是国内可直连的 mp3 接口，稳定可靠。 */
+let speakAudio = null;      // 当前网络音频
+let speakUtterance = null;  // 当前 TTS（回退用）
+function stopSpeak() {
+  if (speakAudio) { try { speakAudio.pause(); } catch (e) {} speakAudio = null; }
+  if (speakUtterance) { try { speechSynthesis.cancel(); } catch (e) {} speakUtterance = null; }
+}
+function ttsFallback(w) {
+  if (!('speechSynthesis' in window)) return;
   try {
-    if (speakUtterance) { speechSynthesis.cancel(); speakUtterance = null; }
-    const u = new SpeechSynthesisUtterance(entry.w);
+    const u = new SpeechSynthesisUtterance(w);
     u.lang = 'en-US';
     u.rate = 0.85;
     const voices = speechSynthesis.getVoices();
@@ -453,6 +460,26 @@ function speakWord(entry) {
     speakUtterance = u;
     speechSynthesis.speak(u);
   } catch (e) { /* 忽略：无 TTS 环境静默降级 */ }
+}
+function speakWord(entry) {
+  if (!entry) return;
+  stopSpeak();
+  const w = String(entry.w || '').trim();
+  if (!w) return;
+  const btn = $('#modalSpeak');
+  if (btn) { btn.classList.remove('muted'); btn.classList.add('speaking'); }
+  // 有道美音：type=0 美音 / type=1 英音
+  const url = 'https://dict.youdao.com/dictvoice?type=0&audio=' + encodeURIComponent(w);
+  const a = new Audio(url);
+  let settled = false;
+  const clearBtn = () => { if (btn) btn.classList.remove('speaking'); };
+  const fallback = () => {
+    if (settled) return; settled = true;
+    clearBtn(); ttsFallback(w);
+  };
+  a.addEventListener('error', fallback);   // 词条无音频 / 网络失败
+  a.addEventListener('ended', () => { if (speakAudio === a) { speakAudio = null; clearBtn(); } });
+  a.play().then(() => { speakAudio = a; }).catch(fallback); // 自动播放被拦也回退 TTS
 }
 function toggleFavFromModal() {
   if (!modalWord) return;

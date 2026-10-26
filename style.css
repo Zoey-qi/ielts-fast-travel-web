@@ -11,6 +11,8 @@
   --accent: #B03A4B;
   --accent-soft: #FBE9EC;
   --line: #EDE3D5;
+  --danger: #C0392B;
+  --danger-soft: #FDEBEA;
   --shadow: 0 4px 16px rgba(93, 71, 45, 0.08);
 }
 /* 强制浅色：防止微信/手机浏览器深色模式把暖色页面反成深棕 */
@@ -336,6 +338,12 @@ input { font-family: inherit; }
   transition: transform .15s;
 }
 .modal-speak:active { transform: scale(.9); }
+.modal-speak.speaking { background: var(--accent); color: #fff; animation: speakPulse 1.2s ease-in-out infinite; }
+.modal-speak.muted { background: var(--danger-soft); color: var(--danger); }
+@keyframes speakPulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.12); }
+}
 .modal-close { font-size: 18px; color: var(--ink-soft); padding: 4px 8px; }
 /* 覆盖率弹层 */
 .coverage-card { max-height: 82vh; overflow-y: auto; }
