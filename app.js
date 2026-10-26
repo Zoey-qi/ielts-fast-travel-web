@@ -94,6 +94,122 @@ const WORDS = window.IELTS_WORDS; // 7306 词
 const WORD_INDEX = {};
 WORDS.forEach(w => { WORD_INDEX[w.w.toLowerCase()] = w; });
 
+/* ---------- 内置中文书：《遥远的救世主》 ---------- */
+// 46 章全文内置（data/jiushizhu.js），打开时用 scanZh 实时扫描（中文释义→英文替换）
+const ZH_BOOK = {
+  id: 'zh_jiushizhu',
+  title: '遥远的救世主',
+  subtitle: '豆豆 著 · 中文正文自动替换为雅思英语',
+  author: '豆豆',
+  lang: 'zh',
+  chapters: (window.JIU_SHI_ZHU || [])
+};
+let zhBookCache = null; // 扫描结果缓存 { chapters: [{id,title,text,hits,lang,words}] }
+
+async function openZhBook() {
+  const chs = ZH_BOOK.chapters;
+  if (!chs.length) { toast('内置书未加载'); return; }
+  if (zhBookCache) { state.pdfBook = zhBookCache; state.pdfChapter = 0; openPdfChapter(0); return; }
+  showImportProgress('正在扫描全书雅思词汇（46 章）…', 5);
+  // 分片处理避免卡死：每章 4ms 让出主线程
+  const index = Lexer.buildIndex(WORDS);
+  const minCefr = state.importLevel;
+  const chapterData = [];
+  for (let ci = 0; ci < chs.length; ci++) {
+    const ch = chs[ci];
+    const text = (ch.paragraphs || []).join('\n');
+    const hits = Lexer.scanZh(text, { index, minCefr });
+    chapterData.push({
+      id: 'zh' + ci,
+      title: ch.title || '第 ' + (ci + 1) + ' 章',
+      text,
+      hits,
+      lang: 'zh',
+      words: new Set(hits.map(h => h.lemma.toLowerCase())).size
+    });
+    showImportProgress(`扫描中（第 ${ci + 1}/${chs.length} 章，命中 ${hits.length} 词）…`, 5 + Math.round(ci / chs.length * 90));
+    if (ci % 5 === 4) await new Promise(r => setTimeout(r, 0)); // 让渲染更新
+  }
+  hideImportProgress();
+  zhBookCache = {
+    id: ZH_BOOK.id,
+    book: {
+      id: ZH_BOOK.id,
+      type: 'builtin-zh',
+      title: ZH_BOOK.title,
+      subtitle: ZH_BOOK.subtitle,
+      chapterCount: chapterData.length,
+      lang: 'zh',
+      words: new Set(chapterData.reduce((a, c) => a.concat(c.hits.map(h => h.lemma.toLowerCase())), [])).size,
+      coverage: computeCoverage(chapterData),
+      builtin: true
+    },
+    chapters: chapterData
+  };
+  state.pdfBook = zhBookCache;
+  state.pdfChapter = 0;
+  openPdfChapter(0);
+}
+
+// 内置中文书覆盖率（书架卡片显示用）
+function zhCoveragePct() {
+  if (zhBookCache && zhBookCache.book && zhBookCache.book.coverage) {
+    return zhBookCache.book.coverage.pct + '%（' + zhBookCache.book.coverage.hitCount + '/7306）';
+  }
+  // 未扫描过：先算第一章作为快速估算（首次点击书卡时扫描全部）
+  return '…';
+}
+
+// 打开《遥远的救世主》覆盖率详情（若未扫描则先完整扫描）
+async function openZhBookCoverage() {
+  if (!zhBookCache) {
+    showImportProgress('首次扫描全书词汇（约 3 秒）…', 10);
+    const index = Lexer.buildIndex(WORDS);
+    const minCefr = state.importLevel;
+    const chapterData = (ZH_BOOK.chapters || []).map((ch, ci) => {
+      const text = (ch.paragraphs || []).join('\n');
+      const hits = Lexer.scanZh(text, { index, minCefr });
+      return { id: 'zh' + ci, title: ch.title || '第 ' + (ci + 1) + ' 章', text, hits, lang: 'zh', words: new Set(hits.map(h => h.lemma.toLowerCase())).size };
+    });
+    hideImportProgress();
+    zhBookCache = {
+      id: ZH_BOOK.id,
+      book: {
+        id: ZH_BOOK.id, type: 'builtin-zh', title: ZH_BOOK.title, subtitle: ZH_BOOK.subtitle,
+        chapterCount: chapterData.length, lang: 'zh',
+        words: new Set(chapterData.reduce((a, c) => a.concat(c.hits.map(h => h.lemma.toLowerCase())), [])).size,
+        coverage: computeCoverage(chapterData), builtin: true
+      },
+      chapters: chapterData
+    };
+  }
+  // 直接手动渲染覆盖率（内置书不在 localStorage 书库里）
+  const c = zhBookCache.book.coverage;
+  const levels = ['A2', 'B1', 'B2', 'C1', 'C2'];
+  const rows = levels.map(lv => {
+    const h = c.hit[lv] || 0, t = c.total[lv] || 0;
+    const p = t ? Math.round(h / t * 100) : 0;
+    const miss = (c.missing && c.missing[lv] && c.missing[lv].length) ? c.missing[lv] : [];
+    const missHtml = miss.length ? `<div class="cov-miss">缺：${miss.slice(0, 60).map(esc).join('、')}${miss.length > 60 ? `… 等 ${miss.length} 个` : ''}</div>` : '';
+    return `<div class="cov-row">
+      <div class="cov-lv">${lv}</div>
+      <div class="cov-bar"><div class="cov-bar-fill" style="width:${p}%"></div></div>
+      <div class="cov-num">${h}/${t} · ${p}%</div>
+      ${missHtml}
+    </div>`;
+  }).join('');
+  $('#coverageBody').innerHTML = `
+    <div class="cov-head">
+      <div class="cov-title">《${esc(zhBookCache.book.title)}》</div>
+      <div class="cov-overall">全书命中 <b>${c.hitCount}</b> / 7306 词库词（<b>${c.pct}%</b>）</div>
+      <div class="cov-tip">中文正文按"中文释义→英文单词"替换，同一释义取 CEFR 最高级别词条；可多导入几本书互补覆盖。</div>
+    </div>
+    ${rows}
+    <div class="cov-foot">未命中词按级别列出（每级最多显示 60 个），可作"待补充"清单。</div>`;
+  $('#coverageModal').hidden = false;
+  document.body.style.overflow = 'hidden';
+}
+
 /* ---------- 书库模型 ---------- */
 // books: [{ id, type:'builtin'|'pdf', title, subtitle, cover?, chapterCount, words, createdAt }]
 // PDF 书章节：{ id, title, pages:[...], text, hits }  hits = Lexer.scan 结果（自动挖空）
@@ -347,6 +463,21 @@ function renderBookshelf() {
   const list = $('#chapterList');
   const lib = loadLibrary();
   $('#statChapters').textContent = NOVEL.length + ' 章';
+  // —— 内置中文书（《遥远的救世主》）——
+  const zhSection = (window.JIU_SHI_ZHU && window.JIU_SHI_ZHU.length) ? `
+    <div class="shelf-section-title">📚 中文小说 · 中英对照</div>
+    <div class="pdf-book-grid">
+      <div class="pdf-book-card zh-book-card" data-id="zh_jiushizhu">
+        <div class="pdf-book-cover">📖<div class="pdf-book-badge">中→英</div></div>
+        <div class="pdf-book-info">
+          <div class="pdf-book-title">遥远的救世主</div>
+          <div class="pdf-book-meta">${window.JIU_SHI_ZHU.length} 章 · 34 万字 · 豆豆 著</div>
+          <div class="pdf-book-sub">阅读时中文词汇自动替换为雅思英语，点击可查词汇书级讲解</div>
+          <div class="pdf-book-cov" data-cov="zh_jiushizhu">词库覆盖 <b>${zhCoveragePct()}</b> ›</div>
+        </div>
+      </div>
+    </div>
+    <div class="shelf-section-title">✨ 内置书</div>` : '';
   // —— 已导入的 PDF 书 ——
   const pdfSection = lib.length ? `
     <div class="shelf-section-title">📥 我的导入书</div>
@@ -365,7 +496,7 @@ function renderBookshelf() {
     <div class="shelf-section-title">✨ 内置书</div>` : '';
 
   // —— 内置书章节 ——
-  list.innerHTML = pdfSection + NOVEL.map((ch, i) => {
+  list.innerHTML = zhSection + pdfSection + NOVEL.map((ch, i) => {
     const done = progress[ch.id] && progress[ch.id].done;
     const last = progress[ch.id] && progress[ch.id].last;
     const isFirst = i === 0;
@@ -406,9 +537,14 @@ function renderBookshelf() {
         return;
       }
       if (e.target.closest('.pdf-book-cov')) {
+        if (card.dataset.id === 'zh_jiushizhu') {
+          openZhBookCoverage();
+          return;
+        }
         openCoverageModal(card.dataset.id);
         return;
       }
+      if (card.dataset.id === 'zh_jiushizhu') { openZhBook(); return; }
       openPdfBook(card.dataset.id);
     });
   });
@@ -747,6 +883,7 @@ function openPdfChapter(idx) {
   if (!ch) return;
   state.pdfChapter = idx;
   const mode = state.mode;
+  const unit = (book.lang === 'zh' || book.type === 'builtin-zh') ? '章' : '部分';
 
   // 阅读头
   $('#pdfHeader').innerHTML = `
@@ -754,7 +891,7 @@ function openPdfChapter(idx) {
     <div class="reader-sub">${esc(ch.title)}</div>
     <div class="reader-actions">
       <button class="btn-ghost" id="btnPdfQuiz">📝 本章测试</button>
-      <span class="reader-ch">第 ${idx+1} / ${chapters.length} 部分</span>
+      <span class="reader-ch">第 ${idx+1} / ${chapters.length} ${unit}</span>
     </div>`;
 
   // 正文（自动挖空渲染；中文书用 zh 渲染：英文单词 + 中文小字）
@@ -764,8 +901,8 @@ function openPdfChapter(idx) {
   // 翻页
   $('#pdfFooter').innerHTML = `
     <div class="reader-nav">
-      ${idx > 0 ? '<button class="btn-ghost small" id="pdfPrev">‹ 上一部分</button>' : ''}
-      ${idx < chapters.length - 1 ? '<button class="btn-primary" id="pdfNext">下一部分 ›</button>' : '<div class="the-end">— 已到末尾 —</div>'}
+      ${idx > 0 ? '<button class="btn-ghost small" id="pdfPrev">‹ 上一' + unit + '</button>' : ''}
+      ${idx < chapters.length - 1 ? '<button class="btn-primary" id="pdfNext">下一' + unit + ' ›</button>' : '<div class="the-end">— 已到末尾 —</div>'}
     </div>`;
 
   const btnPrev = $('#pdfPrev'); if (btnPrev) btnPrev.addEventListener('click', () => openPdfChapter(idx - 1));
