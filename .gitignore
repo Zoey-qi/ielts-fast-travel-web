@@ -1,0 +1,6 @@
+# screenshots & test scripts
+screenshots/
+tests/
+*.log
+.DS_Store
+Thumbs.db

@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#FBF6F0">
+<title>雅思快穿 · Starlight Rebirth</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- ===== 顶部导航 ===== -->
+<header class="app-header">
+  <div class="header-inner">
+    <span class="brand">✦ 雅思快穿</span>
+    <div class="header-actions">
+      <button class="icon-btn" id="btnBook" title="词汇书">📖</button>
+    </div>
+  </div>
+  <div class="mode-toggle" id="modeToggle" hidden>
+    <button class="mode-btn active" data-mode="full">全英文</button>
+    <button class="mode-btn" data-mode="blanks">挖空</button>
+  </div>
+</header>
+
+<!-- ===== 主容器 ===== -->
+<main id="app">
+
+  <!-- 书架视图 -->
+  <section id="view-bookshelf" class="view active">
+    <div class="hero">
+      <div class="hero-title serif">Starlight Rebirth</div>
+      <div class="hero-sub">女频快穿 · 雅思学习爽文</div>
+      <div class="hero-stats">
+        <span id="statChapters">5 章</span> · <span id="statWords">7306 词</span> · <span id="statFav">0 收藏</span>
+      </div>
+    </div>
+    <div id="chapterList" class="chapter-list"></div>
+  </section>
+
+  <!-- 阅读视图（内置书） -->
+  <section id="view-reader" class="view">
+    <div id="readerHeader" class="reader-header"></div>
+    <div id="readerBody" class="reader-body"></div>
+    <div id="readerFooter" class="reader-footer"></div>
+  </section>
+
+  <!-- 阅读视图（PDF 导入书） -->
+  <section id="view-pdfreader" class="view">
+    <div id="pdfHeader" class="reader-header"></div>
+    <div id="pdfBody" class="reader-body"></div>
+    <div id="pdfFooter" class="reader-footer"></div>
+  </section>
+
+  <!-- 生词本视图 -->
+  <section id="view-vocab" class="view">
+    <div class="view-head">
+      <h2>生词本</h2>
+      <span id="favCount" class="badge">0</span>
+    </div>
+    <div class="filter-row" id="favFilter"></div>
+    <div id="favList" class="fav-list"></div>
+  </section>
+
+  <!-- 词汇书视图 -->
+  <section id="view-wordbook" class="view">
+    <div class="view-head">
+      <h2>雅思词汇书</h2>
+      <span id="wbCount" class="badge">—</span>
+    </div>
+    <div class="search-row">
+      <input type="search" id="wbSearch" placeholder="搜索单词 / 中文释义…" autocomplete="off">
+      <button id="wbSearchBtn" class="btn-primary">搜索</button>
+    </div>
+    <div class="cefr-filter" id="cefrFilter"></div>
+    <div id="wordbookList" class="wordbook-list"></div>
+    <div id="wbLoadMore" class="load-more"></div>
+  </section>
+
+  <!-- 我的视图 -->
+  <section id="view-mine" class="view">
+    <div class="mine-card">
+      <h3>学习统计</h3>
+      <div class="stats-grid">
+        <div class="stat"><span id="mFav">0</span><label>收藏单词</label></div>
+        <div class="stat"><span id="mQuiz">0</span><label>测试次数</label></div>
+        <div class="stat"><span id="mBest">—</span><label>最佳成绩</label></div>
+        <div class="stat"><span id="mChapter">1</span><label>当前章节</label></div>
+      </div>
+    </div>
+    <div class="mine-card">
+      <h3>阅读模式</h3>
+      <div class="setting-row">
+        <label>默认挖空显示</label>
+        <button id="modeDefault" class="btn-ghost">当前：全英文</button>
+      </div>
+      <div class="setting-row">
+        <label>PDF 自动挖空难度</label>
+        <div class="level-row" id="levelRow">
+          <button class="chip" data-lv="A2">基础<br><small>A2+</small></button>
+          <button class="chip" data-lv="B1">标准<br><small>B1+</small></button>
+          <button class="chip" data-lv="B2">进阶<br><small>B2+</small></button>
+        </div>
+      </div>
+      <p class="note">基础：挖 A2 及以上词（偏多）；进阶：只挖 B2 及以上（偏少精）。导入新书时生效。</p>
+    </div>
+    <div class="mine-card">
+      <h3>数据说明</h3>
+      <p class="note">词库来源：<a href="https://github.com/designfuchen/word-atlas" target="_blank" rel="noopener">词光 Word Atlas</a>（CC BY 4.0）· 7,298 个雅思核心词，CEFR A1–C2 分级。收藏与进度保存在本设备浏览器中。</p>
+      <button id="btnReset" class="btn-ghost danger">清空本地数据</button>
+    </div>
+  </section>
+
+</main>
+
+<!-- ===== 底部 Tab ===== -->
+<nav class="tabbar">
+  <button class="tab active" data-tab="bookshelf"><span class="tab-icon">📚</span><span>书架</span></button>
+  <button class="tab" data-tab="vocab"><span class="tab-icon">⭐</span><span>生词本</span></button>
+  <button class="tab" data-tab="wordbook"><span class="tab-icon">📖</span><span>词汇书</span></button>
+  <button class="tab" data-tab="mine"><span class="tab-icon">👤</span><span>我的</span></button>
+</nav>
+
+<!-- ===== 单词释义弹层 ===== -->
+<div id="wordModal" class="modal-mask" hidden>
+  <div class="modal-card">
+    <div class="modal-head">
+      <span id="modalWord" class="modal-word serif"></span>
+      <button id="modalSpeak" class="modal-speak" title="朗读发音">🔊</button>
+      <button id="modalClose" class="modal-close">✕</button>
+    </div>
+    <div id="modalPhonetic" class="modal-phonetic"></div>
+    <div id="modalSenses" class="modal-senses"></div>
+    <div id="modalExtra"></div>
+    <button id="modalFav" class="btn-primary modal-fav">⭐ 收藏</button>
+  </div>
+</div>
+
+<!-- ===== 词库覆盖率弹层 ===== -->
+<div id="coverageModal" class="modal-mask" hidden>
+  <div class="modal-card coverage-card">
+    <div class="modal-head">
+      <span class="modal-word serif">词库覆盖率</span>
+      <button id="coverageClose" class="modal-close">✕</button>
+    </div>
+    <div id="coverageBody"></div>
+  </div>
+</div>
+
+<!-- ===== 测试弹层 ===== -->
+<div id="quizModal" class="modal-mask" hidden>
+  <div class="modal-card quiz-card">
+    <div class="quiz-head">
+      <span id="quizTitle"></span>
+      <span id="quizProgress" class="badge"></span>
+      <button id="quizClose" class="modal-close">✕</button>
+    </div>
+    <div id="quizBody"></div>
+  </div>
+</div>
+
+<script src="data/words.js"></script>
+<script src="data/jszip.min.js"></script>
+<script src="data/pdf.min.js"></script>
+<script src="lexer.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
