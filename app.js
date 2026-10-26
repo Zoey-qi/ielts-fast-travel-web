@@ -219,7 +219,7 @@ async function openZhBookCoverage() {
     </div>
     ${rows}
     <div class="cov-foot">未命中词按级别列出（每级最多显示 60 个），可作"待补充"清单。</div>`;
-  $('#coverageModal').hidden = false;
+  showModal($('#coverageModal'));
   document.body.style.overflow = 'hidden';
 }
 
@@ -282,7 +282,7 @@ function openCoverageModal(bookId) {
   document.body.style.overflow = 'hidden';
 }
 function closeCoverageModal() {
-  $('#coverageModal').hidden = true;
+  hideModal($('#coverageModal'));
   document.body.style.overflow = '';
 }
 
@@ -382,6 +382,13 @@ function showView(name) {
 }
 function getWord(w) { return WORD_INDEX[String(w).toLowerCase()]; }
 
+/* ================= 弹窗统一开关（双保险） =================
+   同时设置 hidden 属性和 style.display：
+   - 若 CSS 已带 [hidden]{display:none!important}，hidden 即可生效；
+   - 若用户缓存旧 CSS 无此规则，内联 style.display 也能压过 .modal-mask 的 display:flex。 */
+function showModal(el) { el.hidden = false; el.style.display = 'flex'; }
+function hideModal(el) { el.hidden = true; el.style.display = 'none'; }
+
 /* ================= 单词弹层 ================= */
 let modalWord = null;
 function openWordModal(w, chapterId) {
@@ -417,14 +424,14 @@ function openWordModal(w, chapterId) {
   $('#modalFav').textContent = isFav ? '✓ 已收藏' : '⭐ 收藏';
   $('#modalFav').classList.toggle('fav-on', isFav);
   $('#modalFav').dataset.chapterId = chapterId || '';
-  $('#wordModal').hidden = false;
+  showModal($('#wordModal'));
   document.body.style.overflow = 'hidden';
 
   // 朗读发音：优先美音（雅思常听美音），用系统 TTS
   speakWord(entry);
 }
 function closeWordModal() {
-  $('#wordModal').hidden = true;
+  hideModal($('#wordModal'));
   document.body.style.overflow = '';
   modalWord = null;
 }
@@ -1031,7 +1038,7 @@ function startPdfQuiz() {
     isPdf: true
   };
   renderQuiz();
-  $('#quizModal').hidden = false;
+  showModal($('#quizModal'));
   document.body.style.overflow = 'hidden';
 }
 function bookLabel(t) { return t.length > 18 ? t.slice(0, 18) + '…' : t; }
@@ -1315,7 +1322,7 @@ function startQuiz() {
     isPdf: false
   };
   renderQuiz();
-  $('#quizModal').hidden = false;
+  showModal($('#quizModal'));
   document.body.style.overflow = 'hidden';
 }
 function shuffle(arr) {
@@ -1390,7 +1397,7 @@ function finishQuiz() {
   updateMineStats();
 }
 function closeQuiz() {
-  $('#quizModal').hidden = true;
+  hideModal($('#quizModal'));
   document.body.style.overflow = '';
   state.quiz = null;
 }

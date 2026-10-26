@@ -21,6 +21,10 @@ html { color-scheme: light; }
 }
 
 * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+/* 关键修复：任何带 hidden 属性的元素必须隐藏。
+   .modal-mask / .mode-toggle 等类定义了 display:flex，会覆盖 hidden 属性的默认
+   display:none，导致弹窗/开关从加载起就显示、点关闭也关不掉 —— 此规则一劳永逸。 */
+[hidden] { display: none !important; }
 html { font-size: 16px; }
 body {
   font-family: -apple-system, "PingFang SC", "Microsoft YaHei", "Segoe UI", sans-serif;

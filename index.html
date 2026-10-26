@@ -182,6 +182,15 @@
      在用户真正导入 PDF/EPUB 时由 app.js 懒加载，启动不等待。
    任何必需项失败：遮罩保留 + 显示"重试/跳过"按钮，绝不白框锁死。 */
 (function () {
+  // 双保险：无论 CSS/JS 是否缓存旧版，启动即强制隐藏所有应用内弹窗，
+  // 避免 .modal-mask 的 display:flex 覆盖 hidden 属性导致"关不掉的弹窗"
+  try {
+    var modals = document.querySelectorAll('.modal-mask');
+    for (var i = 0; i < modals.length; i++) {
+      modals[i].hidden = true;
+      modals[i].style.display = 'none';
+    }
+  } catch (e) { /* 忽略 */ }
   var MUST = ['lexer.js', 'data/words.js', 'data/jiushizhu.js', 'app.js'];
   var texts = {
     'lexer.js': '正在加载阅读引擎…',
