@@ -1472,4 +1472,9 @@ function init() {
   window.__APP_READY = true;
 }
 
-document.addEventListener('DOMContentLoaded', init);
+// 兼容引导加载器异步注入：DOMContentLoaded 可能已触发（异步插 script 时），需立即执行
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', init);
+} else {
+  init();
+}
