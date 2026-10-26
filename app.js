@@ -574,7 +574,12 @@ function renderBookshelf() {
     <input type="file" id="pdfInput" accept="application/pdf,.pdf,application/epub+zip,.epub" hidden>`;
   list.appendChild(importCard);
   const pdfInput = $('#pdfInput');
-  pdfInput.addEventListener('change', e => handlePdfImport(e.target.files[0]));
+  pdfInput.addEventListener('change', e => {
+    pdfInput.value = '';  // 允许重复选同一个文件
+    if (e.target.files && e.target.files[0]) handlePdfImport(e.target.files[0]);
+  });
+  // 点卡片 → 触发隐藏的文件选择器（此前缺失，导致"点导入没反应"）
+  importCard.addEventListener('click', () => { if (pdfInput) pdfInput.click(); });
 
   // PDF 书卡片点击 / 删除 / 覆盖率
   list.querySelectorAll('.pdf-book-card').forEach(card => {
