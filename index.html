@@ -162,14 +162,14 @@
 
 <!-- 启动加载遮罩：所有依赖脚本（含 lexer/pdf/jszip）统一由引导器异步加载，
      不再用同步 <script> 阻塞首屏 —— 慢网络下页面解析不卡，遮罩必然能弹出 -->
-<div id="bootMask" class="boot-mask">
-<div id="bootMask" class="boot-mask">
+<div id="bootMask" class="boot-mask" onclick="if(event.target===this){var m=document.querySelectorAll('.boot-mask');for(var i=0;i<m.length;i++)m[i].style.display='none';window.__bootSkip&&window.__bootSkip()}">
   <div class="boot-card">
+    <button class="boot-x" title="关闭" onclick="var m=document.querySelectorAll('.boot-mask');for(var i=0;i<m.length;i++)m[i].style.display='none'">✕</button>
     <div class="boot-spinner"></div>
     <div id="bootText">正在加载雅思词库（约 2MB）…</div>
     <div class="boot-actions">
       <button id="bootRetry" class="btn-primary boot-retry" style="display:none" onclick="window.__bootRetry && window.__bootRetry()">重试</button>
-      <button id="bootSkip" class="btn-ghost boot-skip" onclick="window.__bootSkip && window.__bootSkip()">跳过，直接进入（词库后台继续加载）</button>
+      <button id="bootSkip" class="btn-ghost boot-skip" onclick="var m=document.querySelectorAll('.boot-mask');for(var i=0;i<m.length;i++)m[i].style.display='none';window.__bootSkip&&window.__bootSkip()">跳过，直接进入（词库后台继续加载）</button>
     </div>
   </div>
 </div>
@@ -199,16 +199,22 @@
   var bootTimer = null;
 
   function setText(t) { if (txt) txt.textContent = t; }
+  // 隐藏所有遮罩元素（防止历史上出现过重复/嵌套的 bootMask，全部关掉）
+  function hideAllMasks() {
+    var all = document.querySelectorAll('.boot-mask');
+    for (var i = 0; i < all.length; i++) all[i].style.display = 'none';
+    if (bootTimer) { clearTimeout(bootTimer); bootTimer = null; }
+  }
   function setLoading(on) {
-    if (mask) mask.style.display = on ? 'flex' : 'none';
+    var all = document.querySelectorAll('.boot-mask');
+    for (var i = 0; i < all.length; i++) all[i].style.display = on ? 'flex' : 'none';
   }
   function showActions(show) {
     if (retryBtn) retryBtn.style.display = show ? 'inline-block' : 'none';
     if (skipBtn) skipBtn.style.display = show ? 'inline-block' : 'none';
   }
   function hideMask() {
-    if (mask) mask.style.display = 'none';
-    if (bootTimer) { clearTimeout(bootTimer); bootTimer = null; }
+    hideAllMasks();
   }
   function toast_ish(msg) {
     try { if (window.__toast) window.__toast(msg); } catch (e) {}

@@ -447,3 +447,11 @@ input { font-family: inherit; }
 .boot-actions .btn-primary { min-width: 140px; }
 .boot-skip { font-size: 13px; padding: 8px 16px; color: var(--ink-soft); }
 .boot-skip:hover { color: var(--ink); }
+.boot-x {
+  position: absolute; top: 10px; right: 14px;
+  width: 36px; height: 36px; border: none; background: none;
+  font-size: 22px; line-height: 1; color: var(--ink-soft); cursor: pointer;
+  border-radius: 8px;
+}
+.boot-x:hover { color: var(--ink); background: rgba(0,0,0,.06); }
+.boot-card { position: relative; }
