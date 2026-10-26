@@ -90,9 +90,22 @@ const NOVEL = [
 ];
 
 /* ---------- 词汇数据 ---------- */
-const WORDS = window.IELTS_WORDS; // 7306 词
-const WORD_INDEX = {};
-WORDS.forEach(w => { WORD_INDEX[w.w.toLowerCase()] = w; });
+let WORDS = (window.IELTS_WORDS && Array.isArray(window.IELTS_WORDS)) ? window.IELTS_WORDS : []; // 7306 词（异步加载，缺失时不崩溃）
+let WORD_INDEX = {};
+let WORD_INDEX_READY = false;
+function rebuildWordIndex() {
+  // 词库可能被引导加载器异步补齐（失败重试后）——重新从全局读取并重建索引
+  if (window.IELTS_WORDS && Array.isArray(window.IELTS_WORDS) && !WORD_INDEX_READY) {
+    WORDS = window.IELTS_WORDS;
+    WORD_INDEX = {};
+    WORDS.forEach(w => { WORD_INDEX[w.w.toLowerCase()] = w; });
+    WORD_INDEX_READY = true;
+    return true;
+  }
+  return WORD_INDEX_READY;
+}
+window.__ensureWords = rebuildWordIndex; // 供引导加载器调用
+rebuildWordIndex();
 
 /* ---------- 内置中文书：《遥远的救世主》 ---------- */
 // 46 章全文内置（data/jiushizhu.js），打开时用 scanZh 实时扫描（中文释义→英文替换）
@@ -1454,6 +1467,9 @@ function init() {
   input.addEventListener('input', () => {
     if (!input.value.trim()) { state.wbSearchTerm = ''; state.wbPage = 0; renderWordbook(); }
   });
+
+  // 通知引导加载器：应用已就绪，可隐藏加载遮罩
+  window.__APP_READY = true;
 }
 
 document.addEventListener('DOMContentLoaded', init);

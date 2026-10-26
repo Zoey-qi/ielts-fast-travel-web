@@ -160,11 +160,93 @@
   </div>
 </div>
 
-<script src="data/words.js"></script>
-<script src="data/jiushizhu.js"></script>
 <script src="data/jszip.min.js"></script>
 <script src="data/pdf.min.js"></script>
 <script src="lexer.js"></script>
-<script src="app.js"></script>
+
+<!-- ===== 启动加载遮罩（大文件异步加载，失败可重试） ===== -->
+<div id="bootMask" class="boot-mask">
+  <div class="boot-card">
+    <div class="boot-spinner"></div>
+    <div id="bootText">正在加载雅思词库（约 2MB）…</div>
+    <button id="bootRetry" class="btn-primary boot-retry" style="display:none" onclick="window.__bootRetry && window.__bootRetry()">重试</button>
+  </div>
+</div>
+
+<script>
+/* 引导加载器：words.js(6.3MB) / jiushizhu.js(1MB) 异步加载，
+   不阻塞首屏；任何一步失败显示重试，而非让整个 app 崩溃 */
+(function () {
+  var deps = ['data/words.js', 'data/jiushizhu.js', 'app.js'];
+  var texts = {
+    'data/words.js': '正在加载雅思词库（约 2MB）…',
+    'data/jiushizhu.js': '正在加载内置小说《遥远的救世主》…',
+    'app.js': '正在启动…'
+  };
+  var mask = document.getElementById('bootMask');
+  var txt = document.getElementById('bootText');
+  var retry = document.getElementById('bootRetry');
+  var loaded = {};
+  var failed = [];
+  var booting = false;
+
+  function setText(t) { if (txt) txt.textContent = t; }
+  function setLoading(on) {
+    if (retry) retry.style.display = (on || !failed.length) ? 'none' : 'inline-block';
+    if (mask) mask.style.display = on ? 'flex' : 'none';
+  }
+  function loadScript(src) {
+    return new Promise(function (res, rej) {
+      var s = document.createElement('script');
+      s.src = src; s.async = false;
+      s.onload = function () { loaded[src] = true; res(); };
+      s.onerror = function () { rej(new Error(src)); };
+      document.head.appendChild(s);
+    });
+  }
+  function boot() {
+    if (booting) return;
+    booting = true;
+    setLoading(true);
+    // 只加载缺失项；app.js 已执行过则跳过（避免重复绑事件）
+    var todo = deps.filter(function (s) {
+      if (loaded[s]) return false;
+      if (s === 'app.js') return !window.__APP_READY;
+      return true;
+    });
+    var idx = 0;
+    (function next() {
+      if (idx >= todo.length) {
+        booting = false;
+        // words.js 已加载但 app.js 未跑 → 补建索引；若都已就绪则直接收尾
+        if (window.IELTS_WORDS && window.__ensureWords) window.__ensureWords();
+        // 全部就绪 → 等 app 初始化
+        var t = setInterval(function () {
+          if (window.__APP_READY) { clearInterval(t); setLoading(false); }
+        }, 60);
+        return;
+      }
+      var src = todo[idx++];
+      setText(texts[src] || '加载中…');
+      loadScript(src).then(function () {
+        // words.js 刚加载完 → 立即重建词库索引（app.js 若未运行，由 __APP_READY 收尾）
+        if (src === 'data/words.js') {
+          try {
+            if (window.__ensureWords) window.__ensureWords();
+          } catch (e) { /* 忽略 */ }
+        }
+        next();
+      }, function () {
+        failed = [src];
+        booting = false;
+        setText('加载失败：' + src.split('/').pop() + '（网络不稳定，可能是 GitHub Pages 访问问题）。请检查网络后点击重试。');
+        setLoading(false);
+      });
+    })();
+  }
+  window.__bootRetry = boot;
+  boot();
+})();
+</script>
 </body>
 </html>
